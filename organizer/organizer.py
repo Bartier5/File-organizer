@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Set
+from typing import List
 
 from organizer.utils import get_logger, validate_directory
 from organizer.rules import Extension_map
@@ -34,19 +34,27 @@ class FileOrganizer:
         folder_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"  Folder ready: {folder_name}/")
         return folder_path
+    def move_file(self, file: Path, destination: Path) -> str:
+        target = destination / file.name
+        if target.exists():
+            result = f"  SKIPPED: {file.name} already exists in {destination.name}/"
+            logger.warning(result)
+            return result
+        file.rename(target)
+        result = f"  MOVED: {file.name} → {destination.name}/"
+        logger.info(result)
+        return result
     def organize(self) -> None:
         self.scan_files()
         if not self.files:
             logger.warning("NO files found. Nothing to organize")
             return
-        categories_needed: Set[str] = set()
+        logger.info("Creating category folders...")
         
         for f in self.files:
             category = self.categorize(f)   
-            categories_needed.add(category)
-            logger.info(f"  Detected: {f.name} -> {category}")
-        
-        logger.info("Creating category folders...")
+            destination = self.create_folder(category)
+            self.move_file(f, destination)
+            logger.info("Organization complete.")
 
-        for category in categories_needed:
-            self.create_folder(category)
+     
