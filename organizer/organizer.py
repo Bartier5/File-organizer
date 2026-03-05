@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List
+from typing import List, Set
 
 from organizer.utils import get_logger, validate_directory
 from organizer.rules import Extension_map
@@ -29,11 +29,24 @@ class FileOrganizer:
                 return category
 
         return "Misc"
+    def create_folder(self, folder_name: str) -> Path:
+        folder_path = self.directory / folder_name
+        folder_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"  Folder ready: {folder_name}/")
+        return folder_path
     def organize(self) -> None:
         self.scan_files()
         if not self.files:
             logger.warning("NO files found. Nothing to organize")
             return
+        categories_needed: Set[str] = set()
+        
         for f in self.files:
             category = self.categorize(f)   
+            categories_needed.add(category)
             logger.info(f"  Detected: {f.name} -> {category}")
+        
+        logger.info("Creating category folders...")
+
+        for category in categories_needed:
+            self.create_folder(category)
