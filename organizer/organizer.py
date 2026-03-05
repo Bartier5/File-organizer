@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import List
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from organizer.utils import get_logger, validate_directory
 from organizer.rules import Extension_map
@@ -49,12 +50,25 @@ class FileOrganizer:
         if not self.files:
             logger.warning("NO files found. Nothing to organize")
             return
-        logger.info("Creating category folders...")
+        file_map: dict[Path, Path] = {}
         
         for f in self.files:
             category = self.categorize(f)   
             destination = self.create_folder(category)
-            self.move_file(f, destination)
-            logger.info("Organization complete.")
+            file_map[f] = destination
+        logger.info(f"Moving {len(self.files)} file(s) using {self.workers} workers...")
+        with ThreadPoolExecutor(max_workers=self.workers) as executor:
+            futures = {
+                executor.submit(self.move_file, f, dest): f
+                for f, dest in file_map.items()
+            }
 
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    failed_file = futures[future]
+                    logger.error(f"  FAILED: {failed_file.name} — {e}")
+
+        logger.info("Organization complete.")
      
