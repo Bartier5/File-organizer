@@ -16,14 +16,27 @@ class FileOrganizer:
         
         logger.info(f"FileOrganizer Intialized -> {self.directory}")
     def scan_files(self) -> List[Path]:
-        self.files = [
+        try:
+            self.files = [
             item for item in self.directory.iterdir()
             if item.is_file()
-        ]
-        logger.info(f"Found {len(self.files)} file(s) to organize")
-        return self.files
+            ]
+            logger.info(f"Found {len(self.files)} file(s) to organize")
+            return self.files
+        except PermissionError:
+            logger.error(f"Permission denied reading directory: {self.directory}")
+            self.files = []
+            return []
+
+        except OSError as e:
+            logger.error(f"Failed to scan directory: {e}")
+            self.files = []
+            return []
     def categorize(self, file: Path) -> str:
         extension = file.suffix.lower()
+        if not extension:
+            logger.warning(f"  No extension found for: {file.name} → Misc")
+            return "Misc"
 
         for category,extensions in Extension_map.items():
             if extension in extensions:
@@ -32,19 +45,47 @@ class FileOrganizer:
         return "Misc"
     def create_folder(self, folder_name: str) -> Path:
         folder_path = self.directory / folder_name
-        folder_path.mkdir(parents=True, exist_ok=True)
-        logger.info(f"  Folder ready: {folder_name}/")
-        return folder_path
+        try:
+            folder_path.mkdir(parents=True, exist_ok=True)
+            logger.info(f"  Folder ready: {folder_name}/")
+            return folder_path
+        except PermissionError:
+            logger.error(f"Permission denied creating folder: {folder_name}/")
+            raise
+
+        except OSError as e:
+            logger.error(f"Failed to create folder {folder_name}/: {e}")
+            raise
+
     def move_file(self, file: Path, destination: Path) -> str:
-        target = destination / file.name
-        if target.exists():
-            result = f"  SKIPPED: {file.name} already exists in {destination.name}/"
-            logger.warning(result)
+        try:
+            target = destination / file.name
+            if not file.exists():
+                result = f"  SKIPPED: {file.name} no longer exists"
+                logger.warning(result)
+                return result
+            if target.exists():
+                result = f"  SKIPPED: {file.name} already exists in {destination.name}/"
+                logger.warning(result)
+                return result
+            file.rename(target)
+            result = f"  MOVED: {file.name} → {destination.name}/"
+            logger.info(result)
             return result
-        file.rename(target)
-        result = f"  MOVED: {file.name} → {destination.name}/"
-        logger.info(result)
-        return result
+        except PermissionError:
+            result = f"  FAILED: No permission to move {file.name}"
+            logger.error(result)
+            return result
+
+        except FileNotFoundError:
+            result = f"  FAILED: {file.name} not found during move"
+            logger.error(result)
+            return result
+
+        except OSError as e:
+            result = f"  FAILED: {file.name} — {e}"
+            logger.error(result)
+            return result
     def organize(self) -> None:
         self.scan_files()
         if not self.files:
@@ -53,9 +94,12 @@ class FileOrganizer:
         file_map: dict[Path, Path] = {}
         
         for f in self.files:
-            category = self.categorize(f)   
-            destination = self.create_folder(category)
-            file_map[f] = destination
+            category = self.categorize(f)  
+            try: 
+                destination = self.create_folder(category)
+                file_map[f] = destination
+            except OSError:
+                logger.error(f"  Skipping {f.name} — could not create destination folder.")
         logger.info(f"Moving {len(self.files)} file(s) using {self.workers} workers...")
         with ThreadPoolExecutor(max_workers=self.workers) as executor:
             futures = {
